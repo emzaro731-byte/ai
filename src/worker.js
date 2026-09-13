@@ -1,4 +1,5 @@
 const keys = new Map();
+const rateBuckets = new Map();
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -26,18 +27,40 @@ async function hashKey(key) {
 }
 
 function requireAdmin(request, env) {
-  return Boolean(env.ADMIN_SECRET && request.headers.get('x-admin-secret') === env.ADMIN_SECRET);
+  const supplied = request.headers.get('x-admin-secret');
+  return Boolean(env.ADMIN_SECRET && supplied && supplied === env.ADMIN_SECRET);
 }
 
 async function getClientKey(request) {
   const key = request.headers.get('x-api-key');
-  if (!key) return null;
+  if (!key || !key.startsWith('ai_')) return null;
   return keys.get(await hashKey(key)) || null;
 }
 
 async function requireApiKey(request) {
   const record = await getClientKey(request);
-  return record && !record.revoked ? record : null;
+  if (!record || record.revoked) return null;
+  if (record.expiresAt && Date.now() >= Date.parse(record.expiresAt)) {
+    record.revoked = true;
+    return null;
+  }
+  return record;
+}
+
+function rateLimit(record, limit = 60, windowMs = 60_000) {
+  const now = Date.now();
+  const key = record.id;
+  let bucket = rateBuckets.get(key);
+  if (!bucket || now - bucket.startedAt >= windowMs) {
+    bucket = { startedAt: now, count: 0 };
+    rateBuckets.set(key, bucket);
+  }
+  bucket.count += 1;
+  return {
+    allowed: bucket.count <= limit,
+    remaining: Math.max(0, limit - bucket.count),
+    resetIn: Math.max(0, windowMs - (now - bucket.startedAt)),
+  };
 }
 
 function requireOpenAI(env) {
@@ -75,11 +98,21 @@ export default {
     const path = url.pathname;
 
     if (request.method === 'GET' && path === '/health') {
-      return json({ ok: true, service: 'ai-api-key-server', platform: 'cloudflare-workers', openaiConfigured: Boolean(env.OPENAI_API_KEY) });
+      return json({
+        ok: true,
+        service: 'ai-api-key-server',
+        platform: 'cloudflare-workers',
+        openaiConfigured: Boolean(env.OPENAI_API_KEY),
+        keySecurity: 'hashed-expiring-rate-limited',
+      });
     }
 
     if (request.method === 'GET' && path === '/api/models') {
-      if (!(await requireApiKey(request)) || !requireOpenAI(env)) return json({ error: !requireOpenAI(env) ? 'OPENAI_API_KEY is not configured on the server' : 'Invalid API key' }, !requireOpenAI(env) ? 503 : 401);
+      const clientKey = await requireApiKey(request);
+      if (!clientKey) return json({ error: 'Invalid, revoked, or expired API key' }, 401);
+      const limit = rateLimit(clientKey, 60);
+      if (!limit.allowed) return json({ error: 'Rate limit exceeded', retryAfterMs: limit.resetIn }, 429, { 'Retry-After': String(Math.ceil(limit.resetIn / 1000)) });
+      if (!requireOpenAI(env)) return json({ error: 'OPENAI_API_KEY is not configured on the server' }, 503);
       try {
         return proxyJson(await openai('/models', env, { method: 'GET' }));
       } catch (error) {
@@ -94,8 +127,16 @@ export default {
       const key = generateApiKey();
       const id = crypto.randomUUID();
       const name = typeof body?.name === 'string' ? body.name.trim().slice(0, 100) : 'default';
-      keys.set(await hashKey(key), { id, name, createdAt: new Date().toISOString(), revoked: false });
-      return json({ id, name, apiKey: key }, 201);
+      const days = Number.isFinite(Number(body?.expiresInDays)) ? Math.min(Math.max(Number(body.expiresInDays), 1), 3650) : 365;
+      const expiresAt = new Date(Date.now() + days * 86_400_000).toISOString();
+      keys.set(await hashKey(key), {
+        id,
+        name,
+        createdAt: new Date().toISOString(),
+        expiresAt,
+        revoked: false,
+      });
+      return json({ id, name, apiKey: key, expiresAt }, 201);
     }
 
     if (request.method === 'POST' && path === '/api/keys/validate') {
@@ -104,8 +145,8 @@ export default {
       const key = typeof body?.apiKey === 'string' ? body.apiKey : '';
       if (!key) return json({ valid: false, error: 'apiKey is required' }, 400);
       const record = keys.get(await hashKey(key));
-      if (!record || record.revoked) return json({ valid: false }, 401);
-      return json({ valid: true, id: record.id, name: record.name });
+      if (!record || record.revoked || (record.expiresAt && Date.now() >= Date.parse(record.expiresAt))) return json({ valid: false }, 401);
+      return json({ valid: true, id: record.id, name: record.name, expiresAt: record.expiresAt });
     }
 
     if (request.method === 'POST' && path === '/api/keys/revoke') {
@@ -122,7 +163,15 @@ export default {
     }
 
     const clientKey = await requireApiKey(request);
-    if (!clientKey) return json({ error: 'Invalid API key' }, 401);
+    if (!clientKey) return json({ error: 'Invalid, revoked, or expired API key' }, 401);
+
+    const limit = rateLimit(clientKey, 60);
+    if (!limit.allowed) {
+      return json({ error: 'Rate limit exceeded', retryAfterMs: limit.resetIn }, 429, {
+        'Retry-After': String(Math.ceil(limit.resetIn / 1000)),
+      });
+    }
+
     if (!requireOpenAI(env)) return json({ error: 'OPENAI_API_KEY is not configured on the server' }, 503);
 
     if (request.method === 'POST' && path === '/api/chat') {
