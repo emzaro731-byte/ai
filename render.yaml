@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: ai-api-server
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ADMIN_SECRET
+        generateValue: true
+      - key: OPENAI_BASE_URL
+        value: https://api.openai.com/v1
