@@ -1,0 +1,38 @@
+name: Deploy AI API to VPS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            set -e
+            APP_DIR="${{ secrets.VPS_APP_DIR || '/opt/ai-api-server' }}"
+            if [ ! -d "$APP_DIR/.git" ]; then
+              sudo mkdir -p "$APP_DIR"
+              sudo chown -R "$USER":"$USER" "$APP_DIR"
+              git clone https://github.com/emzaro731-byte/ai.git "$APP_DIR"
+            else
+              cd "$APP_DIR"
+              git fetch origin main
+              git reset --hard origin/main
+            fi
+            cd "$APP_DIR"
+            npm install --omit=dev
+            sudo systemctl restart ai-api-server
+            sleep 2
+            curl -fsS http://127.0.0.1:3000/health
