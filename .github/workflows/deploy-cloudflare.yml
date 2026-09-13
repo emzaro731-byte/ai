@@ -40,5 +40,7 @@ jobs:
       - name: Set admin secret
         env:
           ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           printf '%s' "$ADMIN_SECRET" | npx wrangler secret put ADMIN_SECRET --name ai-api-server
