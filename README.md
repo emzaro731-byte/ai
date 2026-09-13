@@ -6,7 +6,7 @@ Backend for a Flutter/Android AI app with client API keys and multimodal OpenAI 
 
 This repository now includes a Cloudflare Workers version in `src/worker.js` and automatic GitHub Actions deployment in `.github/workflows/deploy-cloudflare.yml`.
 
-Cloudflare Workers Free currently includes up to 100,000 requests/day. citeturn0search2
+Cloudflare Workers Free currently includes up to 100,000 requests/day.
 
 ### GitHub secrets required
 
@@ -18,8 +18,6 @@ Add:
 - `CLOUDFLARE_API_TOKEN` — a Cloudflare API token with Workers deployment permissions.
 - `OPENAI_API_KEY` — your server-side OpenAI API key.
 - `ADMIN_SECRET` — a long random secret used to create/revoke client API keys.
-
-Cloudflare's official GitHub Actions setup requires the account ID and API token as CI secrets. citeturn0search1
 
 After these four secrets are added, every push to `main` deploys the Worker automatically.
 
@@ -44,7 +42,7 @@ Admin-only:
 
 The Cloudflare Worker currently keeps generated client API keys in Worker memory. That is suitable for initial testing, but Worker instances can restart, so keys are not guaranteed to survive a restart or be shared across all instances.
 
-For a production app, the next upgrade should move the key store to Cloudflare D1. D1 is available on the Workers Free plan with daily free limits. citeturn0search0turn0search3
+For a production app, the next upgrade should move the key store to Cloudflare D1. D1 is available on the Workers Free plan with daily free limits.
 
 ### Music
 
