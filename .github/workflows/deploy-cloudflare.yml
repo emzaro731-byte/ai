@@ -22,25 +22,27 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Configure OpenAI secret
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test -n "$OPENAI_API_KEY"
+          printf '%s' "$OPENAI_API_KEY" | npx wrangler secret put OPENAI_API_KEY --name ai-api-server
+
+      - name: Configure admin secret
+        env:
+          ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test -n "$ADMIN_SECRET"
+          printf '%s' "$ADMIN_SECRET" | npx wrangler secret put ADMIN_SECRET --name ai-api-server
+
       - name: Deploy Worker
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy
-
-      - name: Set OpenAI secret
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          printf '%s' "$OPENAI_API_KEY" | npx wrangler secret put OPENAI_API_KEY --name ai-api-server
-
-      - name: Set admin secret
-        env:
-          ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          printf '%s' "$ADMIN_SECRET" | npx wrangler secret put ADMIN_SECRET --name ai-api-server
